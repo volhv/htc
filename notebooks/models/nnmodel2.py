@@ -74,25 +74,24 @@ class SkipgramModeler(nn.Module):
         super(SkipgramModeler, self).__init__()
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)
         self.linear1 = nn.Linear(embedding_dim, 32)
-        self.linear2 = nn.Linear(32, context_size * vocab_size)
+        self.linear2 = nn.Linear(32, vocab_size)
         self.context_size = context_size
         #self.parameters['context_size'] = context_size
 
     def forward(self, inputs):
-        embeds = self.embeddings(inputs).view((1, -1))  # -1 implies size inferred for that index from the size of the data
+        embeds = self.embeddings(inputs)\
+                    .mean(axis=0).view(1, -1)  # -1 implies size inferred for that index from the size of the data
         #print(np.mean(np.mean(self.linear2.weight.data.numpy())))
         out1 = F.relu(self.linear1(embeds)) # output of first layer
         out2 = self.linear2(out1)           # output of second layer
         #print(embeds)
-        log_probs = F.log_softmax(out2, dim=1).view(self.context_size,-1)
+        log_probs = F.log_softmax(out2, dim=1).view(1,-1)
         return log_probs
 
-    def predict(self,input):
-        context_idxs = torch.tensor([input], dtype=torch.long)
+    def predict(self,context_idxs):
         res = self.forward(context_idxs)
-        res_arg = torch.argmax(res)
         res_val, res_ind = res.sort(descending=True)
-        indices = [res_ind[i][0].item() for i in np.arange(0, self.context_size)]
+        indices = [res_ind[i].item() for i in np.arange(0, self.context_size)]
         return indices
 
 
@@ -152,14 +151,14 @@ class NNModel(CartModel):
             #print(ngrams[:10])
             self.model.zero_grad()
             
-            for target, context in ngrams:
+            for context, target in ngrams:
         
                 # Step 1. Prepare the inputs to be passed to the model (i.e, turn the words
                 # into integer indices and wrap them in tensors)
                 #print(context,target)
 
 
-                context_idxs = torch.tensor([self.prod_to_ix[context]], dtype=torch.long)
+                context_idxs = torch.tensor([self.prod_to_ix[c] for c in context], dtype=torch.long)
                 context_idxs.to(self.device)
                 #print("Context id",context_idxs)
 
@@ -175,8 +174,7 @@ class NNModel(CartModel):
                 #print(log_probs)
                 # Step 4. Compute your loss function. (Again, Torch wants the target
                 # word wrapped in a tensor)
-                target_list = torch.tensor(
-                    [self.prod_to_ix[w] for w in target], dtype=torch.long)
+                target_list = torch.tensor([self.prod_to_ix[target]], dtype=torch.long)
                 loss = loss_function(log_probs, target_list)
                 #print(loss)
 
@@ -210,16 +208,15 @@ class NNModel(CartModel):
         self.train_nn(X_train, n_epochs, n_batch, lr=lr)
          
         
-    def predict_item(self, item_id):
-        if item_id in self.cache:
-            return self.cache[item_id]
-        if not item_id in self.prod_to_ix:
-            return []
-        ix = self.prod_to_ix[item_id]
-        z = self.model.predict(ix)
-        rz = [self.ix_to_prod[zi] for zi in z]
-        self.cache[item_id] = rz
-        return rz
+    def predict_item(self, basket):
+        zz = []
+        for ctx, target in sample2(basket, 5, 3):
+            print(ctx)
+            context_idxs = torch.tensor([ctx], dtype=torch.long)
+            context_idxs.to("cuda")
+            zi = self.model.predict(context_idxs)
+            zz += [zi]
+        return zz
     
     def predict(self, X_test):
         #q = X_test.item_id.isin(self.prod_to_ix)
