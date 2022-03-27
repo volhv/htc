@@ -73,7 +73,7 @@ class CartModel(object):
     
     
     def to_basket(self, X_test):
-        basket = X_test.groupby(['pav_order_id'])['item_id'].agg([('basket', list)])
+        basket = X_test.groupby(['buyer_id', 'pav_order_id'])['item_id'].agg([('basket', list)])
         return basket
     
     def quality(self, X_val):
